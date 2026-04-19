@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from app.db.db import client
 from app.routers.authRouter import router as auth_router
+from app.routers.dashboardRouter import router as dashboard_router
 from app.api.v1.routes.email import router as email_router
 from app.core.config import get_settings
 from app.services.email.sendEmail import send_email
@@ -8,6 +9,7 @@ from app.services.email.sendEmail import send_email
 settings = get_settings()
 app = FastAPI(title=settings.APP_NAME)
 app.include_router(auth_router)
+app.include_router(dashboard_router)
 app.include_router(email_router)
 
 
