@@ -10,4 +10,3 @@ configuration.api_key["api-key"] = settings.brevo_api_key or ""
 api_client = sib_api_v3_sdk.ApiClient(configuration)
 
 email_api = sib_api_v3_sdk.TransactionalEmailsApi(api_client)
-campaign_api = sib_api_v3_sdk.EmailCampaignsApi(api_client)

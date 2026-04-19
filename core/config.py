@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         if self.FRONTEND_URL:
             return f"{self.FRONTEND_URL.rstrip('/')}/reset-password"
 
-        return "http://localhost:3000/reset-password"
+        raise ValueError("Set RESET_PASSWORD_URL or FRONTEND_URL in environment")
 
 
 @lru_cache

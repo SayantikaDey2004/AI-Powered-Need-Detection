@@ -11,17 +11,20 @@ def send_email(
     subject: str,
     html_content: str,
 ) -> None:
-    if not settings.brevo_api_key or not settings.BREVO_SENDER_EMAIL:
+    sender_email = settings.EMAIL_FROM or settings.BREVO_SENDER_EMAIL
+    sender_name = settings.BREVO_SENDER_NAME or "ai_need_detection"
+
+    if not settings.brevo_api_key or not sender_email:
         raise RuntimeError(
-            "Brevo is not configured. Set EMAIL_BREVO_API_KEY and BREVO_SENDER_EMAIL in .env"
+            "Brevo is not configured. Set BREVO_API_KEY (or EMAIL_BREVO_API_KEY) and EMAIL_FROM in .env"
         )
 
     recipient = {"email": to_email, "name": to_name}
 
     send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
         sender={
-            "name": settings.BREVO_SENDER_NAME,
-            "email": settings.BREVO_SENDER_EMAIL,
+            "name": sender_name,
+            "email": sender_email,
         },
         to=[recipient],
         subject=subject,
