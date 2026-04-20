@@ -111,8 +111,9 @@ async def _process_survey_ai(inserted_id, survey_data):
         )
 
 
-async def create_survey_data_control(data):
+async def create_survey_data_control(data, ngo_id: str):
     survey_data = data.model_dump()
+    survey_data["ngo_id"] = ngo_id
     survey_data["processing_status"] = "pending"
     survey_data["ai_analysis"] = {
         "description": "Pending AI analysis",
@@ -129,9 +130,9 @@ async def create_survey_data_control(data):
     return ai_output
 
 
-async def get_survey_data_controls(limit: int = 50):
+async def get_survey_data_controls(limit: int, ngo_id: str):
     documents = (
-        await survey_data_control_collection.find()
+        await survey_data_control_collection.find({"ngo_id": ngo_id})
         .sort("created_at", -1)
         .limit(limit)
         .to_list(length=limit)
@@ -143,9 +144,12 @@ async def get_survey_data_controls(limit: int = 50):
     }
 
 
-async def get_latest_survey_data_control_for_user(submitted_by: str):
+async def get_latest_survey_data_control_for_user(submitted_by: str, ngo_id: str):
     document = await survey_data_control_collection.find_one(
-        {"submitted_by": submitted_by},
+        {
+            "submitted_by": submitted_by,
+            "ngo_id": ngo_id,
+        },
         sort=[("created_at", -1)],
     )
 

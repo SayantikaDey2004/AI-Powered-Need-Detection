@@ -91,8 +91,8 @@ def _serialize_history_item(document: Dict) -> Dict:
     }
 
 
-async def get_history_needs(data) -> Dict:
-    query: Dict = {}
+async def get_history_needs(data, ngo_id: str) -> Dict:
+    query: Dict = {"ngo_id": ngo_id}
     if data.submitted_by:
         query["submitted_by"] = data.submitted_by
 
@@ -115,11 +115,16 @@ async def get_history_needs(data) -> Dict:
     }
 
 
-async def get_history_need_by_id(need_id: str) -> Dict:
+async def get_history_need_by_id(need_id: str, ngo_id: str) -> Dict:
     if not ObjectId.is_valid(need_id):
         raise HTTPException(status_code=400, detail="Invalid need_id")
 
-    document = await survey_data_control_collection.find_one({"_id": ObjectId(need_id)})
+    document = await survey_data_control_collection.find_one(
+        {
+            "_id": ObjectId(need_id),
+            "ngo_id": ngo_id,
+        }
+    )
     if not document:
         raise HTTPException(status_code=404, detail="Need not found")
 
