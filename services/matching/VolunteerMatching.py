@@ -126,6 +126,34 @@ def _extract_skills(volunteer: Dict[str, Any]) -> List[str]:
     return _dedupe_text_list(skills)
 
 
+def _extract_volunteer_location(volunteer: Dict[str, Any]) -> str:
+    raw_location = volunteer.get("location")
+    if not raw_location:
+        raw_location = volunteer.get("address")
+
+    if isinstance(raw_location, dict):
+        location_parts = [
+            _normalize_text(raw_location.get("area")),
+            _normalize_text(raw_location.get("city")),
+            _normalize_text(raw_location.get("district")),
+            _normalize_text(raw_location.get("state")),
+            _normalize_text(raw_location.get("country")),
+        ]
+        combined_location = ", ".join([part for part in location_parts if part])
+        return _normalize_text(combined_location)
+
+    candidate_fields = [
+        raw_location,
+        volunteer.get("city"),
+        volunteer.get("city_area"),
+        volunteer.get("district"),
+        volunteer.get("state"),
+        volunteer.get("pin_code"),
+    ]
+    normalized_fields = [_normalize_text(value) for value in candidate_fields if _normalize_text(value)]
+    return ", ".join(_dedupe_text_list(normalized_fields))
+
+
 def _normalize_volunteer(volunteer: Dict[str, Any]) -> Dict[str, Any]:
     volunteer_id = _normalize_text(
         volunteer.get("_id") or volunteer.get("volunteer_id") or volunteer.get("user_id")
@@ -150,6 +178,7 @@ def _normalize_volunteer(volunteer: Dict[str, Any]) -> Dict[str, Any]:
             or volunteer.get("volunteer_phone")
         )
         or None,
+        "volunteer_location": _extract_volunteer_location(volunteer) or None,
         "skills": _extract_skills(volunteer),
     }
 
@@ -217,6 +246,7 @@ def _build_match_prompt(need: Dict[str, Any], volunteers: List[Dict[str, Any]], 
             {
                 "volunteer_id": volunteer["volunteer_id"],
                 "volunteer_name": volunteer["volunteer_name"],
+                "location": volunteer["volunteer_location"],
                 "skills": volunteer["skills"],
             }
             for volunteer in volunteers
@@ -225,7 +255,7 @@ def _build_match_prompt(need: Dict[str, Any], volunteers: List[Dict[str, Any]], 
 
     return (
         "You are an NGO volunteer matching assistant. "
-        "Rank volunteers for the need using skill relevance, urgency fit, and practical suitability. "
+        "Rank volunteers for the need using location proximity, skill relevance, urgency fit, and practical suitability. "
         "Return JSON only with this exact shape: "
         "{\"ranked_volunteers\": [{\"volunteer_id\": string, \"score\": number, \"explanation\": string}]}. "
         f"Return at most {top_k} volunteers. "
@@ -246,18 +276,31 @@ def _fallback_rank_volunteers(need: Dict[str, Any], volunteers: List[Dict[str, A
     )
 
     ranked: List[Dict[str, Any]] = []
+    need_location_tokens = set(re.findall(r"[a-z0-9]+", _normalize_text(need.get("location")).lower()))
+
     for volunteer in volunteers:
         skill_tokens = set(re.findall(r"[a-z0-9]+", " ".join(volunteer["skills"]).lower()))
-        overlap = len(need_tokens.intersection(skill_tokens))
-        score = min(100, 40 + overlap * 12)
-
-        explanation = (
-            "Strong skill overlap with this need"
-            if overlap >= 3
-            else "Moderate skill overlap with this need"
-            if overlap >= 1
-            else "General volunteer availability with limited direct skill overlap"
+        location_tokens = set(
+            re.findall(
+                r"[a-z0-9]+",
+                _normalize_text(volunteer.get("volunteer_location")).lower(),
+            )
         )
+
+        skill_overlap = len(need_tokens.intersection(skill_tokens))
+        location_overlap = len(need_location_tokens.intersection(location_tokens))
+        score = min(100, 30 + skill_overlap * 12 + location_overlap * 14)
+
+        if skill_overlap >= 3 and location_overlap >= 1:
+            explanation = "Strong skill overlap and nearby location match"
+        elif skill_overlap >= 1 and location_overlap >= 1:
+            explanation = "Good skill overlap with location alignment"
+        elif skill_overlap >= 1:
+            explanation = "Moderate skill overlap with this need"
+        elif location_overlap >= 1:
+            explanation = "Location match with limited direct skill overlap"
+        else:
+            explanation = "General volunteer availability with limited direct overlap"
 
         ranked.append(
             {
@@ -412,11 +455,15 @@ def _rank_volunteers_with_gemini(
     return _safe_parse_ranked_text(getattr(response, "text", ""))
 
 
-async def rank_volunteers_for_need(data, ngo_id: str) -> Dict[str, Any]:
-    need_document = await _fetch_need_document(data, ngo_id)
+async def rank_volunteers_for_document(
+    need_document: Dict[str, Any],
+    ngo_id: str,
+    max_volunteers: int = 50,
+    max_ranked_results: int = 10,
+) -> Dict[str, Any]:
     need = _extract_need_payload(need_document)
 
-    volunteers = await _fetch_available_volunteers(ngo_id, data.max_volunteers)
+    volunteers = await _fetch_available_volunteers(ngo_id, max_volunteers)
     if not volunteers:
         return {
             "message": "No available volunteers found for this NGO",
@@ -430,7 +477,7 @@ async def rank_volunteers_for_need(data, ngo_id: str) -> Dict[str, Any]:
             _rank_volunteers_with_gemini,
             need,
             volunteers,
-            data.max_ranked_results,
+            max_ranked_results,
         )
     except Exception:
         ai_ranked_items = []
@@ -440,11 +487,11 @@ async def rank_volunteers_for_need(data, ngo_id: str) -> Dict[str, Any]:
             need,
             volunteers,
             ai_ranked_items,
-            data.max_ranked_results,
+            max_ranked_results,
         )
         message = "Volunteers ranked successfully using AI"
     else:
-        ranked_volunteers = _fallback_rank_volunteers(need, volunteers)[: data.max_ranked_results]
+        ranked_volunteers = _fallback_rank_volunteers(need, volunteers)[:max_ranked_results]
         message = "Volunteers ranked using fallback logic (AI unavailable)"
 
     return {
@@ -453,3 +500,13 @@ async def rank_volunteers_for_need(data, ngo_id: str) -> Dict[str, Any]:
         "need": need,
         "ranked_volunteers": ranked_volunteers,
     }
+
+
+async def rank_volunteers_for_need(data, ngo_id: str) -> Dict[str, Any]:
+    need_document = await _fetch_need_document(data, ngo_id)
+    return await rank_volunteers_for_document(
+        need_document=need_document,
+        ngo_id=ngo_id,
+        max_volunteers=data.max_volunteers,
+        max_ranked_results=data.max_ranked_results,
+    )

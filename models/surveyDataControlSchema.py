@@ -2,6 +2,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
+from app.models.volunteerMatchingSchema import VolunteerMatchResponseSchema
+
 
 class SurveyDataControlStatusSchema(BaseModel):
     urgency: Literal["Low", "Medium", "High", "Critical", "Unknown"]
@@ -22,6 +24,7 @@ class SurveyDataControlAIOutputSchema(BaseModel):
     ]
     resources: List[str]
     status: SurveyDataControlStatusSchema
+    auto_match_result: VolunteerMatchResponseSchema
 
 
 class SurveyDataControlCreateResponseSchema(SurveyDataControlAIOutputSchema):

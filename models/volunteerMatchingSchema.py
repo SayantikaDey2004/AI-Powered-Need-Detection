@@ -19,6 +19,7 @@ class RankedVolunteerSchema(BaseModel):
     volunteer_name: str
     volunteer_email: Optional[str] = None
     volunteer_phone: Optional[str] = None
+    volunteer_location: Optional[str] = None
     skills: List[str]
     score: int
     explanation: str
